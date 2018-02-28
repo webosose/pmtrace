@@ -1,0 +1,1436 @@
+#!/usr/bin/env python
+#
+# smem - a tool for meaningful memory reporting
+#
+# Copyright 2008-2009 Matt Mackall <mpm@selenic.com>
+#
+# This software may be used and distributed according to the terms of
+# the GNU General Public License version 2 or later, incorporated
+# herein by reference.
+
+import re, os, sys, pwd, optparse, errno, tarfile, collections
+
+class procdata(object):
+    def __init__(self, source):
+        self._ucache = {}
+        self._gcache = {}
+        self.source = source and source or ""
+        self._memory = None
+        if hasattr(total_gal_gpu_mem, "_gal_gpudata"):
+            del total_gal_gpu_mem._gal_gpudata
+    def _list(self):
+        return os.listdir(self.source + "/proc")
+    def _read(self, f):
+        return open(self.source + '/proc/' + f).read()
+    def _readlines(self, f):
+        return self._read(f).splitlines(True)
+    def _read_special(self, f):
+        return open(self.source + '/sys/kernel/debug/kgsl/proc/' + f).read()
+    def _readlines_special(self, f):
+        return self._read_special(f).splitlines(True)
+    def _stat(self, f):
+        return os.stat(self.source + "/proc/" + f)
+
+    def pids(self):
+        '''get a list of processes'''
+        return [int(e) for e in self._list()
+                if e.isdigit() and not iskernel(e)]
+    def memory(self):
+        if self._memory is None:
+            self._memory = {}
+            f = re.compile('(\\S+):\\s+(\\d+) kB')
+            for l in src.memdata():
+                m = f.match(l)
+                if m:
+                    self._memory[m.group(1).lower()] = int(m.group(2))
+        return self._memory
+
+    def mapdata(self, pid):
+        return self._readlines('%s/smaps' % pid)
+    def gal_gpudata(self, pid):
+        ret = []
+        try:
+            ret = self._readlines('gmem_info')
+        finally:
+            return ret
+    def mali_gpudata(self, pid):
+        ret = []
+        try:
+            ret = self._readlines('%s/mem' % pid)
+        finally:
+            return ret
+    def android_kgsl_gpudata(self, pid):
+        ret = []
+        try:
+            # First try to get it from the debugfs filesystem
+            # Location would be /sys/kernel/debug/kgsl/proc/<PID>/mem
+            ret = self._readlines('%s/mem' % pid)
+        except:
+            # Otherwise try to get it from the smemcap tar file
+            # Location would be tar[.gz]/<PID>/mem
+            ret = self._readlines_special('%s/mem' % pid)
+        finally:
+            # Make sure we return something or an empty list
+            return ret
+    def memdata(self):
+        return self._readlines('meminfo')
+    def usablepagesdata(self):
+        return self._readlines('usable_pages')[0].rstrip()
+    def version(self):
+        return self._readlines('version')[0]
+    def pidname(self, pid):
+        try:
+            l = self._read('%d/stat' % pid)
+            return l[l.find('(') + 1: l.find(')')]
+        except:
+            return '?'
+    def pidcmd(self, pid):
+        try:
+            return self._read('%s/cmdline' % pid).rstrip('\0').replace('\0', ' ')
+        except:
+            return '?'
+    def piduser(self, pid):
+        try:
+            return self._stat('%d' % pid).st_uid
+        except:
+            return -1
+    def pidgroup(self, pid):
+        try:
+            return self._stat('%d' % pid).st_gid
+        except:
+            return -1
+    def username(self, uid):
+        if uid == -1:
+            return '?'
+        if uid not in self._ucache:
+            try:
+                self._ucache[uid] = pwd.getpwuid(uid)[0]
+            except KeyError:
+                self._ucache[uid] = str(uid)
+        return self._ucache[uid]
+    def groupname(self, gid):
+        if gid == -1:
+            return '?'
+        if gid not in self._gcache:
+            try:
+                self._gcache[gid] = pwd.getgrgid(gid)[0]
+            except KeyError:
+                self._gcache[gid] = str(gid)
+        return self._gcache[gid]
+
+class tardata(procdata):
+    def __init__(self, source):
+        procdata.__init__(self, source)
+        self.tar = tarfile.open(source)
+    def _list(self):
+        for ti in self.tar:
+            if ti.name.endswith('/smaps'):
+                d,f = ti.name.split('/')
+                yield d
+    def _read(self, f):
+        return self.tar.extractfile(f).read()
+    def _readlines(self, f):
+        return self.tar.extractfile(f).readlines()
+    def piduser(self, p):
+        t = self.tar.getmember("%d" % p)
+        if t.uname:
+            self._ucache[t.uid] = t.uname
+        return t.uid
+    def pidgroup(self, p):
+        t = self.tar.getmember("%d" % p)
+        if t.gname:
+            self._gcache[t.gid] = t.gname
+        return t.gid
+    def username(self, u):
+        return self._ucache.get(u, str(u))
+    def groupname(self, g):
+        return self._gcache.get(g, str(g))
+
+def totalmem():
+    if not hasattr(totalmem, "_totalmem"):
+        totalmem._totalmem = 0
+
+    if not totalmem._totalmem:
+        if options.realmem:
+            totalmem._totalmem = fromunits(options.realmem) / 1024
+        else:
+            totalmem._totalmem = src.memory()['memtotal']
+    return totalmem._totalmem
+
+def kernelsize():
+    if not hasattr(kernelsize, "_kernelsize"):
+        kernelsize._kernelsize = 0
+
+    if not kernelsize._kernelsize and options.kernel:
+        try:
+            d = os.popen("size %s" % options.kernel).readlines()[1]
+            kernelsize._kernelsize = int(d.split()[3]) / 1024
+        except:
+            try:
+                # try some heuristic to find gzipped part in kernel image
+                packedkernel = open(options.kernel).read()
+                pos = packedkernel.find('\x1F\x8B')
+                if pos >= 0 and pos < 25000:
+                    sys.stderr.write("Maybe uncompressed kernel can be extracted by the command:\n"
+                            "  dd if=%s bs=1 skip=%d | gzip -d >%s.unpacked\n\n" % (options.kernel, pos, options.kernel))
+            except:
+                pass
+            sys.stderr.write("Parameter '%s' should be an original uncompressed compiled kernel file.\n\n" % options.kernel)
+    return kernelsize._kernelsize
+
+def total_gal_gpu_mem(pid):
+    ''' Returns the per process GPU memory usage for the passed process id (pid), in kB unit
+        Parses gmem_info file containing a table of per process GPU memory usage in bytes
+        The information from column 'Reserved' is the GPU memory usage of the process
+        A static dict gets created from the parsed table and it's queried using pid as key
+        gmem_info sample output:
+        Pid          Total      Reserved    Contiguous       Virtual      Nonpaged    Name
+         276   137,369,464   107,566,456    20,890,112     8,912,896             0    /app/sbin/webappmanager
+         363     4,807,168     4,020,736             0       786,432             0    /usr/lib/weston/weston-keyboard
+         342     2,229,248     1,704,960             0       524,288             0    weston
+        ------------------------------------------------------------------------------
+           3   144,405,880   113,292,152    20,890,112    10,223,616             0    Summary
+           -             -    20,925,576             -             -             -    Available
+        GPU Idle time:  11905.828125 ms
+    '''
+    if not hasattr(total_gal_gpu_mem, "_gal_gpudata"):
+        total_gal_gpu_mem._gal_gpudata = {}
+        SEP   = '-' * 10
+        MEMRE = '^[ ]+(?P<pid>[0-9]+) +(?P<total>[0-9\,]+) +(?P<reserved>[0-9\,]+)' \
+                ' +(?P<contiguous>[0-9\,]+) +(?P<virtual>[0-9\,]+) +(?P<nonpaged>[0-9\,]+?)' \
+                ' +(?P<name>.*)$'
+        found_separator = False
+        for l in src.gal_gpudata(pid):
+            match = re.search(MEMRE, l, re.MULTILINE)
+            if SEP in l:
+                found_separator = True
+            if match:
+                mdict = match.groupdict()
+                if found_separator and mdict.get('name') == 'Summary':
+                    # Found 'Summary' column after the separator; store it with key 'TOTALS'
+                    total_gal_gpu_mem._gal_gpudata['TOTALS'] = mdict
+                else:
+                    total_gal_gpu_mem._gal_gpudata[mdict.pop('pid')] = mdict
+    total = 0
+    pid_info = total_gal_gpu_mem._gal_gpudata.get(str(pid));
+    if pid_info:
+        col_of_interest = 'reserved'
+        v = pid_info.get(col_of_interest, '0')
+        # Convert value from '123,456' format to '123456'
+        v = int("".join(v.split(",")))
+        # Convert to kB
+        total = v / 1024
+    return total
+
+def total_mali_gpu_mem(pid):
+    ''' Parses /sys/kernel/debug/mali/mem/<PID>_<ID> and gets total allocated memory, outputting in kB unit
+        Expected format (in bytes):
+        ...
+        Total allocated memory: 35190832
+    '''
+    total = 0
+    FIELD = 'totalallocmem'
+    TOTAL_MEM_ALLOCATED_PATTERN = 'Total allocated memory: (?P<%s>\d+)' % FIELD
+    for l in src.mali_gpudata(pid):
+        match = re.search(TOTAL_MEM_ALLOCATED_PATTERN, l)
+        if (match):
+            fields = match.groupdict()
+            total = (int(fields.get(FIELD, 0)) / 1024)
+            break
+    return total
+
+def total_android_gpu_mem(pid):
+    ''' Parses /sys/kernel/debug/kgsl/proc/<PID>/mem and sum all of its sizes, outputting in kB unit
+        Expected format:
+         gpuaddr useraddr     size    id flags       type            usage sglen
+         aafd2000 aafd2000    16384    71 ----p     gpumem      arraybuffer     4
+         aafe1000 aafe1000    65536    68 -r--p     gpumem          command    16
+         ...
+    '''
+    total = 0
+    for l in src.android_kgsl_gpudata(pid):
+        f = l.split()
+        if f[2].isdigit():
+            # Sum up the size column
+            total += int(f[2])
+    return (total / 1024)
+
+def pidmaps(pid):
+    maps = {}
+    start = None
+    needs_gpu_mem = True
+
+    if not hasattr(pidmaps, "_warned"):
+        pidmaps._warned = False
+
+    for l in src.mapdata(pid):
+        f = l.split()
+        if f[-1] == 'kB':
+            maps[start][f[0][:-1].lower()] = int(f[1])
+            if f[0] == "Pss:":
+                if maps[start]["name"].endswith("kgsl-3d0"):
+                    if needs_gpu_mem:
+                        needs_gpu_mem = False
+                        # Android GPU data coming from /sys/kernel/debug/kgsl/proc/<PID>/mem instead of /dev/kgsl-3d0
+                        # smemcap utility shall capture it under <PID>/mem as opposed to <PID>/smaps
+                        maps[start]['gpu'] = total_android_gpu_mem(pid)
+                elif maps[start]["name"].endswith("pvrsrvkm"):
+                    # m14 TV GPU data coming from /dev/pvrsrvkm
+                    maps[start]['gpu'] = int(f[1])
+                elif maps[start]["name"].endswith("mali0"):
+                    if needs_gpu_mem:
+                        needs_gpu_mem = False
+                        # m16 TV GPU data coming from /sys/kernel/debug/mali/mem/<PID>_<ID>
+                        # smemcap utility shall capture it under <PID>/mem as opposed to <PID>/smaps
+                        maps[start]['gpu'] = total_mali_gpu_mem(pid)
+                elif maps[start]["name"].endswith("libGAL.so"):
+                    if needs_gpu_mem:
+                        needs_gpu_mem = False
+                        # leopard GPU data coming from /usr/bin/gmem_info for processes with libGAL.so loaded
+                        # smemcap utility shall capture /usr/bin/gmem_info output on gmem_info in memory snapshot
+                        maps[start]['gpu'] = total_gal_gpu_mem(pid)
+                else:
+                    maps[start]['pss_minus_gpu'] = int(f[1])
+        elif '-' in f[0] and ':' not in f[0]: # looks like a mapping range
+            start, end = f[0].split('-')
+            start = int(start, 16)
+            name = "<anonymous>"
+            if len(f) > 5:
+                name = f[5]
+            maps[start] = dict(end=int(end, 16), mode=f[1],
+                               offset=int(f[2], 16),
+                               device=f[3], inode=f[4], name=name)
+
+    if start is not None and maps[start].get('pss') is None and not pidmaps._warned:
+        sys.stderr.write('warning: kernel does not appear to support PSS measurement\n')
+        pidmaps._warned = True
+        if not options.sort:
+            options.sort = 'rss'
+
+    if options.mapfilter:
+        f = {}
+        for m in maps:
+            if not filters(options.mapfilter, m, lambda x: maps[x]['name']):
+                f[m] = maps[m]
+        return f
+
+    return maps
+
+def sortmaps(totals, key):
+    l = []
+    for pid in totals:
+        l.append((totals[pid][key], pid))
+    l.sort()
+    return [pid for pid,key in l]
+
+def iskernel(pid):
+    return src.pidcmd(pid) == ""
+
+def units(x):
+    s = ''
+    if x == 0:
+        return '0'
+    for s in ('', 'K', 'M', 'G', 'T'):
+        if x < 1024:
+            break
+        x /= 1024.0
+    return "%.1f%s" % (x, s)
+
+def fromunits(x):
+    s = dict(k=2**10, K=2**10, kB=2**10, KB=2**10,
+             M=2**20, MB=2**20, G=2**30, GB=2**30,
+             T=2**40, TB=2**40)
+    for k,v in s.items():
+        if x.endswith(k):
+            return int(float(x[:-len(k)])*v)
+    sys.stderr.write("Memory size should be written with units, for example 1024M\n")
+    sys.exit(-1)
+
+def pidusername(pid):
+    return src.username(src.piduser(pid))
+
+def showamount(a, total):
+    if options.abbreviate:
+        return units(a * 1024)
+    elif options.percent:
+        if total == 0:
+            return 'N/A'
+        return "%.2f%%" % (100.0 * a / total)
+    return a
+
+def filters(opt, arg, *sources):
+    if not opt:
+        return False
+
+    for f in sources:
+        if re.search(opt, f(arg)):
+            return False
+    return True
+
+def pidtotals(pid):
+    maps = pidmaps(pid)
+    t = dict(size=0, rss=0, pss=0, shared_clean=0, shared_dirty=0,
+             private_clean=0, private_dirty=0, referenced=0, swap=0, gpu=0,
+             pss_minus_gpu=0)
+    for m in maps.iterkeys():
+        for k in t:
+            t[k] += maps[m].get(k, 0)
+
+    t['uss'] = t['private_clean'] + t['private_dirty']
+    t['maps'] = len(maps)
+
+    return t
+
+def processtotals(pids):
+    totals = {}
+    for pid in pids:
+        if (filters(options.pidfilter, pid, lambda pid: str(pid))
+                or filters(options.processfilter, pid, src.pidname, src.pidcmd)
+                or filters(options.userfilter, pid, pidusername)):
+            continue
+        try:
+            p = pidtotals(pid)
+            if p['maps'] != 0:
+                totals[pid] = p
+        except:
+            continue
+    return totals
+
+def getcolstrfromidx(idx):
+    ID_MIN = 65 # character A in ASCII
+    ID_MAX = 90 # character Z in ASCII
+    ID_RADIX= ID_MAX - ID_MIN + 1
+
+    col = ""
+    while (idx >= ID_RADIX):
+        col = chr(idx % ID_RADIX + ID_MIN) + col
+        idx /= ID_RADIX
+        idx -= 1
+    return chr(idx % ID_RADIX + ID_MIN) + col
+
+def addpercentages(ws, scol, idxcols, field, nfields, nrows, fmts):
+    idxcol = idxcols[field]
+    stridxcol = getcolstrfromidx(idxcol)
+    idxheader = 0 if options.no_header else 1
+    col = nfields + scol
+    # Add headers
+    if not options.no_header:
+        ws.write(0, col, field.upper() + " (%)", fmts['b'])
+        ws.write(0, col + 1, field.upper() + " CUM (%)", fmts['b'])
+    # Set column size
+    ws.set_column(getcolstrfromidx(col) + ":" + getcolstrfromidx(col + 1)
+        , 15.0
+    )
+    # Write sums
+    pos = nrows + idxheader + 2
+    ws.write_formula(pos, idxcol, "=SUM(" + stridxcol + str(idxheader + 1)
+        + ":" + stridxcol + str(nrows + idxheader) + ")", fmts['bv']
+    )
+    # Write percentage lines
+    for i in xrange(nrows):
+        start, end = i + idxheader + 1, pos + 1
+        ws.write_formula(i + idxheader, col, "=" + stridxcol + str(start)
+            + "/$" + stridxcol + "$" + str(end), fmts['p']
+        )
+        ws.write_formula(i + idxheader, col + 1, "=SUBTOTAL(109,$"
+            + stridxcol + "$" + str(idxheader + 1) + ":" + stridxcol
+            + str(start) + ")/$" + stridxcol + "$" + str(end), fmts['p']
+        )
+
+def exporttable(workbook, worksheetname, rows, fields, columns, sort):
+    # Formats
+    fmts = {
+        'b': workbook.add_format({'bold': True}),
+        'v': workbook.add_format({'num_format': '0.00'}),
+        'p': workbook.add_format({'num_format': '0.00%'}),
+        'bv': workbook.add_format({'bold': True, 'num_format': '0.00'}),
+    }
+    ws = workbook.add_worksheet(worksheetname)
+
+    if sort not in fields:
+        showfields(fields, sort)
+        sys.exit(-1)
+
+    missing = set(columns) - set(fields)
+    if len(missing) > 0:
+        showfields(fields, missing)
+        sys.exit(-1)
+
+    # Print the header
+    if not options.no_header:
+        ncol = 0
+        for f in fields:
+            if options.abbreviate and 'a' in fields[f][2]:
+                ws.write(0, ncol, fields[f][0] + " (Mb)", fmts['b'])
+            else:
+                ws.write(0, ncol, fields[f][0], fmts['b'])
+            ncol += 1
+
+    # Sort the columns
+    l = []
+    for n in rows:
+        r = [fields[f][1](n) for f in fields]
+        l.append((fields[sort][1](n), r))
+    l.sort(reverse=bool(options.reverse))
+
+    # Print the table
+    idxheader = 0 if options.no_header else 1
+    nrow = idxheader
+    if options.abbreviate:
+        # Slowpath of converting elements
+        for k, r in l:
+            ncol = 0
+            for (c, f) in zip(r, fields):
+                if 'a' in fields[f][2]:
+                    if f == 'usable_pages':
+                        ws.write(nrow, ncol, c / 256., fmts['v'])
+                    else:
+                        ws.write(nrow, ncol, c / 1024., fmts['v'])
+                else:
+                    ws.write(nrow, ncol, c)
+                ncol += 1
+            nrow += 1
+    else:
+        # The quicker way to print
+        for k, r in l:
+            ws.write_row(nrow, 0, r)
+            nrow += 1
+
+    adj = 0
+    # Print totals
+    if options.totals:
+        # adjust +1 for translating the indexing range from
+        # (0.. total rows - 1) to (1..total rows) for (A1..A total rows)
+        # adjust +1 for inserting a blank space between the last row and
+        # the totals so autofilter doesn't mess with totals
+        adj = 2
+        nrow += adj
+        ncol = 0
+        for f in fields:
+            ign = ("order", "count", "area", "command", "name", "map", "pids")
+            if fields[f][0].lower() in ign:
+                # Ignore these fields on totals
+                ncol += 1
+                continue
+            colstr = getcolstrfromidx(ncol)
+            start, end, dest = (idxheader + 1, nrow - adj, colstr + str(nrow))
+            startcell, endcell = (colstr + str(start), colstr + str(end))
+            fullrange = startcell + ":" + endcell
+            if fields[f][0].lower() in ("pid", "user"):
+                # Array formula to count unique members on a possibly filtered set
+                # formula = "{=COUNT(1/FREQUENCY(IF(SUBTOTAL(3,OFFSET(B2,ROW(B2:B87)-ROW(B2),)),MATCH(B2:B87,B2:B87,0)),ROW(B2:B87)-ROW(B2)))}"
+                formula = "{COUNT(1/FREQUENCY(IF(SUBTOTAL(3,OFFSET(" \
+                    + startcell + ",ROW(" + fullrange + ")-ROW(" + startcell \
+                    + "),)),MATCH(" + fullrange + "," + fullrange \
+                    + ",0)),ROW(" + fullrange + ")-ROW(" + startcell + ")))}"
+                ws.write_array_formula(dest + ":" + dest, formula, fmts['b'])
+            else:
+                # Just the regular sum on a possibly filtered set
+                myfmt = "bv" if options.abbreviate else "b"
+                formula = "=SUBTOTAL(109," + fullrange + ")"
+                ws.write_formula(dest, formula, fmts[myfmt])
+            ncol += 1
+        # for f in fields:
+
+    # Hide not default columns and set the default column width
+    idxcols = {}
+    ncol = 0
+    for f in fields:
+        idxcols[fields[f][0].lower()] = ncol
+        colstr = getcolstrfromidx(ncol)
+        fullrange = colstr + ":" + colstr
+        ws.set_column(fullrange, 15.0, None \
+            , {'hidden': True} if fields[f][0].lower() not in columns else {})
+        ncol += 1
+
+    # Generate % and cummulative % columns for some of the columns
+    if options.totals:
+        cols = set(idxcols).intersection(['pss', 'uss'])
+        # Step 2 iteration to account for the new % and cummulative % columns
+        for (i, col) in zip(xrange(0, len(cols) + 1, 2), cols):
+            addpercentages(ws, i, idxcols, col, len(fields), len(rows), fmts)
+
+    # Apply autofilter and freeze pane
+    if not options.no_header:
+        ws.autofilter(getcolstrfromidx(0) + "1:"
+            + getcolstrfromidx(ncol - 1) + str(nrow - adj)
+        )
+        ws.freeze_panes("A2")
+
+def get_pids_aps(aps_map, rows, fields, columns):
+    l = []
+    filtered_fields = collections.OrderedDict( [ (key, fields[key]) for key in ('pid', 'name', 'swap', 'uss', 'pss', 'gpu') ] )
+    for pid in rows:
+        r = [filtered_fields[f][1](pid) for f in filtered_fields]
+        l.append((filtered_fields['pid'][1](pid), r))
+    factor = 1024. if options.abbreviate else 1
+    swapk  = 'Swap'
+    ussk   = 'USS'
+    pssk   = 'PSS'
+    gpuk   = 'GPU'
+    allpk  = 'APS_AllProcesses'
+    for item in l:
+        process = str(item[1][1])
+        mem = aps_map[process] = aps_map.get(process, {})
+        mem[swapk] = mem.get(swapk, 0.) + (item[1][2] / factor)
+        mem[ussk]  = mem.get(ussk , 0.) + (item[1][3] / factor)
+        mem[pssk]  = mem.get(pssk , 0.) + (item[1][4] / factor)
+        mem[gpuk]  = mem.get(gpuk , 0.) + (item[1][5] / factor)
+        if options.totals:
+            allmem = aps_map[allpk] = aps_map.get(allpk, {})
+            allmem[swapk] = allmem.get(swapk, 0.) + (item[1][2] / factor)
+            allmem[ussk]  = allmem.get(ussk , 0.) + (item[1][3] / factor)
+            allmem[pssk]  = allmem.get(pssk , 0.) + (item[1][4] / factor)
+            allmem[gpuk]  = allmem.get(gpuk , 0.) + (item[1][5] / factor)
+    # Only round at the end to decrease rounding errors
+    for item in aps_map:
+        submap = aps_map[item]
+        for key in submap:
+            submap[key] = round(submap[key], 1)
+
+def showpids(workbook = None, aps_map = None):
+    p = src.pids()
+    pt = processtotals(p)
+
+    def showuser(p):
+        if options.numeric:
+            return src.piduser(p)
+        return pidusername(p)
+
+    fields = collections.OrderedDict([
+        ("pid",('PID', lambda n: n, '% 5s', lambda x: len(pt),
+             'process ID')),
+        ("user",('User', showuser, '%-8s', lambda x: len(dict.fromkeys(x)),
+              'owner of process')),
+        ("name",('Name', src.pidname, '%-24.24s', None,
+              'name of process')),
+        ("command",('Command', src.pidcmd, '%-27.27s', None,
+                 'process command line')),
+        ("maps",('Maps',lambda n: pt[n]['maps'], '% 5s', sum,
+              'total number of mappings')),
+        ("swap",('Swap',lambda n: pt[n]['swap'], '% 8a', sum,
+              'amount of swap space consumed (ignoring sharing)')),
+        ("uss",('USS', lambda n: pt[n]['uss'], '% 8a', sum,
+             'unique set size')),
+        ("rss",('RSS', lambda n: pt[n]['rss'], '% 8a', sum,
+             'resident set size (ignoring sharing)')),
+        ("pss",('PSS', lambda n: pt[n]['pss'], '% 8a', sum,
+             'proportional set size (including sharing)')),
+        ("pss_minus_gpu",('PSS_Minus_GPU', lambda n: pt[n]['pss_minus_gpu'], '% 12a', sum,
+             'proportional set size (including sharing, minus GPU)')),
+        ("vss",('VSS', lambda n: pt[n]['size'], '% 8a', sum,
+             'virtual set size (total virtual memory mapped)')),
+        ("gpu",('GPU', lambda n: pt[n]['gpu'], '% 8a', sum,
+             'graphics set size from TV (/dev/pvrsrvkm) or Android (/dev/kgsl-3d0)')),
+        ("shared_clean",('Shared_Clean', lambda n: pt[n]['shared_clean'], '% 14a', sum,
+             'Shared_Clean size')),
+        ("shared_dirty",('Shared_Dirty', lambda n: pt[n]['shared_dirty'], '% 14a', sum,
+             'Shared_Dirty size')),
+        ("private_clean",('Private_Clean', lambda n: pt[n]['private_clean'], '% 14a', sum,
+             'Private_Clean size')),
+        ("private_dirty",('Private_Dirty', lambda n: pt[n]['private_dirty'], '% 14a', sum,
+             'Private_Dirty size')),
+        ])
+    columns = options.columns or 'pid user command swap uss pss gpu rss'
+
+    if workbook is not None:
+        exporttable(workbook, "process.information", pt.keys(), fields, columns.split(), options.sort or 'pss')
+    elif aps_map is not None:
+        get_pids_aps(aps_map, pt.keys(), fields, columns.split())
+    else:
+        showtable(pt.keys(), fields, columns.split(), options.sort or 'pss')
+
+def coalescegroupname(pid, name):
+    lname = name.lower()
+    # Order of checks make a huge difference in timing - keep it sorted by frequency of appearance
+    if lname.startswith("<"):
+        # Check for <anonymous> first as it is a very common condition
+        return name
+    elif lname.startswith("anon_inode:"):
+        # Very common for processes using GPU
+        return "Other mmap'ed files"
+    elif lname.endswith(".so") or lname.rfind(".so.") != -1:
+        return "libraries"
+    elif lname.startswith("/dev/"):
+        if lname.startswith("/dev/shm/"):
+            return "shared memory segments"
+        return "devices"
+    elif lname.startswith("[stack"):
+        # Check this '[stack' condition before matching just '[' below
+        return "[stacks]"
+    elif lname.startswith("["):
+        return name
+    elif lname.endswith(".ttf"):
+        return "fonts"
+    elif lname.startswith("/sysv"):
+        return "shared memory segments"
+    elif name.endswith(src.pidname(pid)) or name.endswith(src.pidcmd(pid).split()[0]):
+        return "executable"
+    else:
+        return "Other mmap'ed files"
+
+def maptotals(pids, group):
+    totals = {}
+    for pid in pids:
+        if (filters(options.pidfilter, pid, lambda pid: str(pid))
+                or filters(options.processfilter, pid, src.pidname, src.pidcmd)
+                or filters(options.userfilter, pid, pidusername)):
+            continue
+        try:
+            maps = pidmaps(pid)
+            seen = {}
+            for m in maps.iterkeys():
+                mapitem = maps[m]
+                name = mapitem['name']
+                if group:
+                    name = coalescegroupname(pid, name)
+                if name not in totals:
+                    t = dict(size=0, rss=0, pss=0, shared_clean=0,
+                             shared_dirty=0, private_clean=0, count=0,
+                             private_dirty=0, referenced=0, swap=0, pids=0,
+                             gpu=0, pss_minus_gpu=0, anonymous=0,
+                             anonhugepages=0, kernelpagesize=0,
+                             mmupagesize=0, locked=0)
+                else:
+                    t = totals[name]
+
+                for k in t:
+                    t[k] += mapitem.get(k, 0)
+                t['count'] += 1
+                if name not in seen:
+                    t['pids'] += 1
+                    seen[name] = 1
+                totals[name] = t
+        except EnvironmentError:
+            continue
+    return totals
+
+def showmaps(group = False, workbook = None):
+    p = src.pids()
+    pt = maptotals(p, group)
+
+    fields = collections.OrderedDict([
+        ("map",('Map', lambda n: n, '%-40.40s', len,
+             'mapping name')),
+        ("count",('Count', lambda n: pt[n]['count'], '% 5s', sum,
+               'number of mappings found')),
+        ("pids",('PIDs', lambda n: pt[n]['pids'], '% 5s', sum,
+              'number of PIDs using mapping')),
+        ("swap",('Swap',lambda n: pt[n]['swap'], '% 8a', sum,
+              'amount of swap space consumed (ignoring sharing)')),
+        ("uss",('USS', lambda n: pt[n]['private_clean']
+             + pt[n]['private_dirty'], '% 8a', sum,
+             'unique set size')),
+        ("rss",('RSS', lambda n: pt[n]['rss'], '% 8a', sum,
+             'resident set size (ignoring sharing)')),
+        ("pss",('PSS', lambda n: pt[n]['pss'], '% 8a', sum,
+             'proportional set size (including sharing)')),
+        ("pss_minus_gpu",('PSS_Minus_GPU', lambda n: pt[n]['pss_minus_gpu'], '% 12a', sum,
+             'proportional set size (including sharing, minus GPU)')),
+        ("vss",('VSS', lambda n: pt[n]['size'], '% 8a', sum,
+             'virtual set size (total virtual address space mapped)')),
+        ("gpu",('GPU', lambda n: pt[n]['gpu'], '% 8a', sum,
+             'graphics set size from TV (/dev/pvrsrvkm) or Android (/dev/kgsl-3d0)')),
+        ("sss",('SSS', lambda n: pt[n]['shared_clean']+pt[n]['shared_dirty'], '% 8a', sum,
+             'shared set size (as the sum of Shared_Clean + Shared_Dirty')),
+        ("shared_clean",('Shared_Clean', lambda n: pt[n]['shared_clean'], '% 14a', sum,
+             'Shared_Clean size')),
+        ("shared_dirty",('Shared_Dirty', lambda n: pt[n]['shared_dirty'], '% 14a', sum,
+             'Shared_Dirty size')),
+        ("private_clean",('Private_Clean', lambda n: pt[n]['private_clean'], '% 14a', sum,
+             'Private_Clean size')),
+        ("private_dirty",('Private_Dirty', lambda n: pt[n]['private_dirty'], '% 14a', sum,
+             'Private_Dirty size')),
+        ("referenced",('Referenced', lambda n: pt[n]['referenced'], '% 12a', sum,
+             'Referenced size (memory recently referenced/accessed; can be cleaned by /proc/<PID>/clear_refs)')),
+        ("anonymous",('Anonymous', lambda n: pt[n]['anonymous'], '% 12a', sum,
+             'Anonymous size (amount of memory that does not belong to any file)')),
+        ("anonhugepages",('AnonHugePages', lambda n: pt[n]['anonhugepages'], '% 14a', sum,
+             'AnonHugePages size (non-file backed huge pages mapped into userspace page tables)')),
+        ("kernelpagesize",('KernelPageSize', lambda n: pt[n]['kernelpagesize'], '% 14a', sum,
+             'KernelPageSize (auto-descriptive)')),
+        ("mmupagesize",('MMUPageSize', lambda n: pt[n]['mmupagesize'], '% 12a', sum,
+             'MMUPageSize (auto-descriptive)')),
+        ("locked",('Locked', lambda n: pt[n]['locked'], '% 8a', sum,
+             'Locked (amount of the mapping that is locked in memory)')),
+        ("avgpss",('AVGPSS', lambda n: int(1.0 * pt[n]['pss']/pt[n]['pids']),
+                '% 8a', sum,
+                'average PSS per PID')),
+        ("avgpss_minus_gpu",('AVGPSS_Minus_GPU', lambda n: int(1.0 * pt[n]['pss_minus_gpu']/pt[n]['pids']),
+                '% 16a', sum,
+                'average PSS_Minus_GPU per PID')),
+        ("avguss",('AVGUSS', lambda n: int(1.0 * (pt[n]['private_clean'] + pt[n]['private_dirty'])/pt[n]['pids']),
+                '% 8a', sum,
+                'average USS per PID')),
+        ("avgrss",('AVGRSS', lambda n: int(1.0 * pt[n]['rss']/pt[n]['pids']),
+                '% 8a', sum,
+                'average RSS per PID')),
+        ("avggpu",('AVGGPU', lambda n: int(1.0 * pt[n]['gpu']/pt[n]['pids']),
+                '% 8a', sum,
+                'average GPU per PID')),
+        ])
+    if group:
+        columns = options.columns or 'map swap uss pss gpu rss'
+        worksheetname = "grouped.mapping.information"
+    else:
+        columns = options.columns or 'map pids swap uss pss gpu rss avguss avgpss avggpu avgrss'
+        worksheetname = "mapping.information"
+
+    if workbook:
+        exporttable(workbook, worksheetname, pt.keys(), fields, columns.split(), options.sort or 'pss')
+    else:
+        showtable(pt.keys(), fields, columns.split(), options.sort or 'pss')
+
+def usertotals(pids):
+    totals = {}
+    for pid in pids:
+        if (filters(options.pidfilter, pid, lambda pid: str(pid))
+                or filters(options.processfilter, pid, src.pidname, src.pidcmd)
+                or filters(options.userfilter, pid, pidusername)):
+            continue
+        try:
+            maps = pidmaps(pid)
+            if len(maps) == 0:
+                continue
+        except EnvironmentError:
+            continue
+        user = src.piduser(pid)
+        if user not in totals:
+            t = dict(size=0, rss=0, pss=0, shared_clean=0,
+                     shared_dirty=0, private_clean=0, count=0,
+                     private_dirty=0, referenced=0, swap=0, gpu=0,
+                     pss_minus_gpu=0)
+        else:
+            t = totals[user]
+
+        for m in maps.iterkeys():
+            for k in t:
+                t[k] += maps[m].get(k, 0)
+
+        t['count'] += 1
+        totals[user] = t
+    return totals
+
+def showusers(workbook = None):
+    p = src.pids()
+    pt = usertotals(p)
+
+    def showuser(u):
+        if options.numeric:
+            return u
+        return src.username(u)
+
+    fields = collections.OrderedDict([
+        ("user",('User', showuser, '%-8s', None,
+              'user name or ID')),
+        ("count",('Count', lambda n: pt[n]['count'], '% 5s', sum,
+               'number of processes')),
+        ("swap",('Swap',lambda n: pt[n]['swap'], '% 8a', sum,
+              'amount of swapspace consumed (ignoring sharing)')),
+        ("uss",('USS', lambda n: pt[n]['private_clean']
+             + pt[n]['private_dirty'], '% 8a', sum,
+             'unique set size')),
+        ("rss",('RSS', lambda n: pt[n]['rss'], '% 8a', sum,
+             'resident set size (ignoring sharing)')),
+        ("pss",('PSS', lambda n: pt[n]['pss'], '% 8a', sum,
+             'proportional set size (including sharing)')),
+        ("pss_minus_gpu",('PSS_Minus_GPU', lambda n: pt[n]['pss_minus_gpu'], '% 12a', sum,
+             'proportional set size (including sharing, minus GPU)')),
+        ("vss",('VSS', lambda n: pt[n]['pss'], '% 8a', sum,
+             'virtual set size (total virtual memory mapped)')),
+        ("gpu",('GPU', lambda n: pt[n]['gpu'], '% 8a', sum,
+             'graphics set size from TV (/dev/pvrsrvkm) or Android (/dev/kgsl-3d0)')),
+        ])
+    columns = options.columns or 'user count swap uss pss gpu rss'
+
+    if workbook:
+        exporttable(workbook, "users", pt.keys(), fields, columns.split(), options.sort or 'pss')
+    else:
+        showtable(pt.keys(), fields, columns.split(), options.sort or 'pss')
+
+def showsystem(workbook = None):
+    t = totalmem()
+    ki = kernelsize()
+    m = src.memory()
+
+    mt = m['memtotal']
+    f = m['memfree']
+
+    # total amount used by hardware
+    fh = max(t - mt - ki, 0)
+
+    # total amount mapped into userspace (ie mapped an unmapped pages)
+    u = m['anonpages'] + m['mapped']
+
+    # total amount allocated by kernel not for userspace
+    kd = mt - f - u
+
+    # total amount in kernel caches
+    kdc = m['buffers'] + m['sreclaimable'] + max((m['cached'] + m['swapcached'] - m['mapped']), 0)
+
+    l = [("firmware/hardware", fh, 0),
+         ("kernel image", ki, 0),
+         ("kernel dynamic memory", kd, kdc),
+         ("userspace memory", u, m['mapped']),
+         ("free memory", f, f)]
+
+    fields = collections.OrderedDict([
+        ("order",('Order', lambda n: n, '% 1s', lambda x: '',
+             'hierarchical order')),
+        ("area",('Area', lambda n: l[n][0], '%-24s', lambda x: '',
+             'memory area')),
+        ("used",('Used', lambda n: l[n][1], '%10a', sum,
+              'area in use')),
+        ("cache",('Cache', lambda n: l[n][2], '%10a', sum,
+              'area used as reclaimable cache')),
+        ("noncache",('Noncache', lambda n: l[n][1] - l[n][2], '%10a', sum,
+              'area not reclaimable')),
+        ])
+    columns = options.columns or 'area used cache noncache'
+
+    if workbook:
+        exporttable(workbook, "system", range(len(l)), fields, columns.split(), options.sort or 'order')
+    else:
+        showtable(range(len(l)), fields, columns.split(), options.sort or 'order')
+
+def get_free_aps(aps_map, l):
+    mem = aps_map["APS_SystemMemory"] = {}
+    factor = 1024. if options.abbreviate else 1
+    mem["Used_RAM"]   = round(l[0][1] / factor, 1)
+    mem["Free_RAM"]   = round(l[0][2] / factor, 1)
+    mem["Total_RAM"]  = round(l[0][3] / factor, 1)
+    mem["Used_Swap"]  = round(l[1][1] / factor, 1)
+    mem["Free_Swap"]  = round(l[1][2] / factor, 1)
+    mem["Total_Swap"] = round(l[1][3] / factor, 1)
+    if options.totals:
+        mem["Used_Total"]  = round(mem["Used_RAM"]  + mem["Used_Swap"] , 1)
+        mem["Free_Total"]  = round(mem["Free_RAM"]  + mem["Free_Swap"] , 1)
+        mem["Total_Total"] = round(mem["Total_RAM"] + mem["Total_Swap"], 1)
+
+def showfree(workbook = None, aps_map = None):
+    m = src.memory()
+
+    mtotal = m['memtotal']
+    mfree  = m['memfree'] + m['cached'] + m['buffers']
+    mused  = mtotal - mfree
+    stotal = m['swaptotal']
+    sfree  = m['swapfree']
+    sused  = stotal - sfree
+
+    l = [("RAM memory (except swap)", mused, mfree, mtotal), ("Swap memory", sused, sfree, stotal)]
+
+    fields = collections.OrderedDict([
+        ("order",('Order', lambda n: n, '% 1s', lambda x: '',
+             'hierarchical order')),
+        ("area",('Area', lambda n: l[n][0], '%-24s', lambda x: '',
+             'memory area')),
+        ("used",('Used', lambda n: l[n][1], '%10a', sum,
+              'used area')),
+        ("free",('Free', lambda n: l[n][2], '%10a', sum,
+              'free area')),
+        ("totals",('Totals', lambda n: l[n][3], '%10a', sum,
+              'totals per area')),
+        ])
+    columns = options.columns or 'area used free totals'
+    if workbook is not None:
+        exporttable(workbook, "free", range(len(l)), fields, columns.split(), options.sort or 'order')
+    elif aps_map is not None:
+        get_free_aps(aps_map, l)
+    else:
+        showtable(range(len(l)), fields, columns.split(), options.sort or 'order')
+
+def showusablepages(workbook = None):
+    try:
+        usable_pages = int(src.usablepagesdata())
+    except:
+        print "Filename %r was not found on the memory snapshot. Skipping it." % "usable_pages"
+    else:
+        l = [("usable_pages", usable_pages)]
+
+        fields = collections.OrderedDict([
+            ("usable_pages",('usable_pages', lambda n: l[n][1], '%12a', sum,
+                'It\'s a metric output by LG\'s Linux kernel in debugfs under path /sys/kernel/mm/low_memory_notify/usable_pages'
+                '\n\t\tusable_pages = free(total + swap) - swapcache + filecache - workingset(120M) + xreclaimable + slab reclaimable'
+                '\n\t\tSee: http://collab.lge.com/main/pages/viewpage.action?pageId=245874589 for more details')),
+        ])
+        columns = options.columns or 'usable_pages'
+
+        if workbook:
+            exporttable(workbook, "usable_pages", range(len(l)), fields, columns.split(), options.sort or 'usable_pages')
+        else:
+            showtable(range(len(l)), fields, columns.split(), options.sort or 'usable_pages')
+
+def showfields(fields, f):
+    if type(f) in (list, set):
+        print "unknown field%s: %s" % ("s" if len(f) > 1 else "", " ".join(sorted(f)))
+    else:
+        print "unknown field:", f
+    print "known fields:"
+    for l in sorted(fields.keys()):
+        print "%-14s %s" % (l, fields[l][-1])
+
+def autosize(columns, fields, rows):
+    colsizes = {}
+    for c in columns:
+        sizes = [1]
+
+        if not options.no_header:
+            sizes.append(len(fields[c][0]))
+
+        if (options.abbreviate or options.percent) and 'a' in fields[c][2]:
+            sizes.append(7)
+        else:
+            for r in rows:
+                sizes.append(len(str(fields[c][1](r))))
+
+        colsizes[c] = max(sizes)
+
+    overflowcols = set(["command", "map"]) & set(columns)
+    if len(overflowcols) > 0:
+        overflowcol = overflowcols.pop()
+        totnoflow = sum(colsizes.values()) - colsizes[overflowcol]
+        try:
+            ttyrows, ttycolumns = os.popen('stty size', 'r').read().split()
+            ttyrows, ttycolumns = int(ttyrows), int(ttycolumns)
+        except:
+            ttyrows, ttycolumns = (24, 80)
+        maxflowcol = ttycolumns - totnoflow - len(columns)
+        maxflowcol = max(maxflowcol, 10)
+        colsizes[overflowcol] = min(colsizes[overflowcol], maxflowcol)
+
+    return colsizes
+
+def showtable(rows, fields, columns, sort):
+    header = ""
+    format = ""
+    formatter = []
+
+    if sort not in fields:
+        showfields(fields, sort)
+        sys.exit(-1)
+
+    if options.pie:
+        columns.append(options.pie)
+    if options.bar:
+        columns.append(options.bar)
+
+    mt = totalmem()
+    st = src.memory()['swaptotal']
+
+    missing = set(columns) - set(fields)
+    if len(missing) > 0:
+        showfields(fields, missing)
+        sys.exit(-1)
+
+    if options.autosize:
+        colsizes = autosize(columns, fields, rows)
+    else:
+        colsizes = {}
+
+    for n in columns:
+        f = fields[n][2]
+        if 'a' in f:
+            if n == 'swap':
+                formatter.append(lambda x: showamount(x, st))
+            elif n == 'usable_pages':
+                formatter.append(lambda x: "%.1f%s" % (x / 256., "M") if options.abbreviate else x)
+            else:
+                formatter.append(lambda x: showamount(x, mt))
+            f = f.replace('a', 's')
+        else:
+            formatter.append(lambda x: x)
+        if n in colsizes:
+            f = re.sub(r"[0-9]+", str(colsizes[n]), f)
+        format += f + " "
+        header += f % fields[n][0] + " "
+
+    l = []
+    for n in rows:
+        r = [fields[c][1](n) for c in columns]
+        l.append((fields[sort][1](n), r))
+
+    l.sort(reverse=bool(options.reverse))
+
+    if options.pie:
+        showpie(l, sort)
+    elif options.bar:
+        showbar(l, columns, sort)
+
+    if not options.no_header:
+        print header
+
+    for k,r in l:
+        print format % tuple([f(v) for f,v in zip(formatter, r)])
+
+    if options.totals:
+        # totals
+        t = []
+        for c in columns:
+            f = fields[c][3]
+            if f:
+                t.append(f([fields[c][1](n) for n in rows]))
+            else:
+                t.append("")
+
+        print "-" * len(header)
+        print format % tuple([f(v) for f,v in zip(formatter, t)])
+
+def export_excel(src):
+    if options.columns or options.sort:
+        print "Error: -c/--columns and -s/--sort aren't compatible with export to excel"
+        print "Try not specifying them and selecting/sorting the columns on excel as desired"
+        sys.exit(1)
+    try:
+        import xlsxwriter as xls
+    except ImportError as e:
+        print "Exception: %s" % e.message
+        print "Error: exporting to excel format requires xlsxwriter module"
+        print "Try: sudo pip install XlsxWriter"
+        sys.exit(1)
+    else:
+        if src.endswith(".tar.gz"):
+            excelpath = src[:-len(".tar.gz")] + ".xlsx"
+        else:
+            excelpath = os.path.splitext(src)[0] + ".xlsx"
+        print "To open the spreadsheet:\n\tscalc %s" % excelpath
+        workbook = xls.Workbook(excelpath, {"in_memory": True})
+        showpids(workbook)
+        showfree(workbook)
+        showmaps(group = False, workbook = workbook)
+        showmaps(group = True, workbook = workbook)
+        showusablepages(workbook)
+        showusers(workbook)
+        showsystem(workbook)
+        workbook.close()
+
+def export_aps(src):
+    if options.columns or options.sort:
+        print "Error: -c/--columns and -s/--sort aren't compatible with export to aps"
+        print "Exporting to aps automatically selects columns and sort options"
+        sys.exit(1)
+    try:
+        import json
+    except ImportError as e:
+        print "Exception: %s" % e.message
+        print "Error: exporting to aps format requires json module"
+        print "Try installing python stdlib or python json module"
+        sys.exit(1)
+    else:
+        if src.endswith(".tar.gz"):
+            apspath = src[:-len(".tar.gz")] + ".aps"
+        else:
+            apspath = os.path.splitext(src)[0] + ".aps"
+        aps_map = {}
+        showpids(aps_map = aps_map)
+        showfree(aps_map = aps_map)
+        aps_map["APS_Unit"] = "MB" if options.abbreviate else "KB"
+        with open(apspath, "w") as f:
+            json.dump(aps_map, f, sort_keys=True, indent=4, separators=(',', ': '))
+            print "Exported:\n\t%s" % apspath
+
+def showdiff(diff):
+    global src
+
+    # Process first source
+    if not options.source:
+        print("Error: It's necessary to specify the source with -S/--source" \
+            " for comparing two memory snapshots"
+        )
+        print("Try specifying both -S/--source and -D/--diff parameters")
+        sys.exit(1)
+    print "SRC_1: " + options.source
+    p1 = src.pids()
+    pt1 = processtotals(p1)
+    l1 = [(src.pidname(i), pt1[i]) for i in p1]
+    l1.sort(reverse=not bool(options.reverse))
+
+    try:
+        src = tardata(diff)
+    except Exception, e:
+        src = procdata(diff)
+
+    # Process second source
+    print "SRC_2: " + diff
+    p2 = src.pids()
+    pt2 = processtotals(p2)
+    l2 = [(src.pidname(i), pt2[i]) for i in p2]
+    l2.sort(reverse=not bool(options.reverse))
+
+    mycmp = lambda x, y: x > y if options.reverse else x < y
+    if options.abbreviate:
+        rst = lambda x: x / 1024.
+        # 15 char process name: include/linux/sched.h:#define TASK_COMM_LEN 16
+        # 23 char longest title: "PSS_MINUS_GPU_DIFF (Mb)"
+        lfmt = "%-15.15s % 23.1f % 23.1f % 23.1f"
+        hfmt = "\n%-15.15s % 23s % 23s % 23s"
+        # 15 + 69 (23 * 3) + 3 spaces
+        stotal = 87
+    else:
+        rst = lambda x: x
+        # 18: same 23 like above minus 5: " (Mb)"
+        lfmt = "%-15.15s % 18s % 18s % 18s"
+        hfmt = "\n" + lfmt
+        stotal = 72
+
+    dftfunc1 = lambda: rst(i1[1][item])
+    dftfunc2 = lambda: rst(i2[1][item])
+    m = collections.OrderedDict([
+        ("swap", (dftfunc1, dftfunc2))
+        , ("uss", (dftfunc1, dftfunc2))
+        , ("pss", (dftfunc1, dftfunc2))
+        , ("gpu", (dftfunc1, dftfunc2))
+        , ("swap+uss", (lambda: rst(i1[1]["swap"]) + rst(i1[1]["uss"])
+            , lambda: rst(i2[1]["swap"]) + rst(i2[1]["uss"]))
+        )
+        , ("swap+pss+gpu", (lambda: rst(i1[1]["swap"]) + rst(i1[1]["pss"])
+            + rst(i1[1]["gpu"]), lambda: rst(i2[1]["swap"])
+            + rst(i2[1]["pss"]) + rst(i2[1]["gpu"]))
+        )
+        , ("swap+pss", (lambda: rst(i1[1]["swap"]) + rst(i1[1]["pss"])
+            , lambda: rst(i2[1]["swap"]) + rst(i2[1]["pss"]))
+        )
+    ])
+    for item in m:
+        ll1, ll2 = list(l1), list(l2)
+        sum1, sum2 = 0, 0
+        if not options.no_header:
+            # Print header
+            f = item.upper()
+            unit = ""
+            if options.abbreviate:
+                unit += " (Mb)"
+            print (hfmt % ("Name", "%s_1%s" % (f, unit)
+                , "%s_2%s" % (f, unit), "%s_DIFF%s" % (f, unit))
+            )
+        while len(ll1) > 0 and len(ll2) > 0:
+            # Consume from both ordered lists
+            k1, k2 = ll1[-1][0], ll2[-1][0]
+            if k1 == k2:
+                # Compare values of similar process
+                i1, i2 = ll1.pop(), ll2.pop()
+                v1, v2 = m[item][0](), m[item][1]()
+                sum1 += v1
+                sum2 += v2
+                print lfmt % (i1[0], v1, v2, v1 - v2)
+            elif mycmp(k1, k2):
+                i1 = ll1.pop()
+                v1 = m[item][0]()
+                sum1 += v1
+                print lfmt % (i1[0], v1, 0, v1)
+            else:
+                i2 = ll2.pop()
+                v2 = m[item][1]()
+                sum2 += v1
+                print lfmt % (i2[0], 0, v2, -v2)
+        while len(ll1) > 0:
+            # Consume remaining items only in l1 and not in l2
+            i1 = ll1.pop()
+            v1 = m[item][0]()
+            sum1 += v1
+            print lfmt % (i1[0], v1, 0, v1)
+        while len(ll2) > 0:
+            # Consume remaining items only in l2 and not in l1
+            ll2.pop()
+            v2 = m[item][1]()
+            sum2 += v1
+            print lfmt % (i2[0], 0, v2, -v2)
+        if options.totals:
+            print "-" * stotal
+            print lfmt % ("Totals", sum1, sum2, sum1 - sum2)
+
+def showpie(l, sort):
+    try:
+        import pylab
+    except ImportError:
+        sys.stderr.write("pie chart requires matplotlib\n")
+        sys.exit(-1)
+
+    if (l[0][0] < l[-1][0]):
+        l.reverse()
+
+    labels = [r[1][-1] for r in l]
+    values = [r[0] for r in l] # sort field
+
+    tm = totalmem()
+    s = sum(values)
+    unused = tm - s
+    t = 0
+    while values and (t + values[-1] < (tm * .02) or
+                      values[-1] < (tm * .005)):
+        t += values.pop()
+        labels.pop()
+
+    if t:
+        values.append(t)
+        labels.append('other')
+
+    explode = [0] * len(values)
+    if unused > 0:
+        values.insert(0, unused)
+        labels.insert(0, 'unused')
+        explode.insert(0, .05)
+
+    pylab.cla()
+    pylab.figure(1, figsize=(6,6))
+    ax = pylab.axes([0.1, 0.1, 0.8, 0.8])
+    pylab.pie(values, explode = explode, labels=labels,
+              autopct="%.2f%%", shadow=True)
+    pylab.title('%s by %s' % (options.pie, sort))
+    pylab.show(block=is_called_as_standalone)
+
+def showbar(l, columns, sort):
+    try:
+        import pylab, numpy
+    except ImportError:
+        sys.stderr.write("bar chart requires matplotlib\n")
+        sys.exit(-1)
+
+    pylab.cla()
+    if (l[0][0] < l[-1][0]):
+        l.reverse()
+
+    rc = []
+    key = []
+    for n in range(len(columns) - 1):
+        try:
+            if columns[n] in 'pid user group'.split():
+                continue
+            float(l[0][1][n])
+            rc.append(n)
+            key.append(columns[n])
+        except:
+            pass
+
+    width = 1.0 / (len(rc) + 1)
+    offset = width / 2
+
+    def gc(n):
+        return 'bgrcmyw'[n % 7]
+
+    pl = []
+    ind = numpy.arange(len(l))
+    for n in xrange(len(rc)):
+        pl.append(pylab.bar(ind + offset + width * n,
+                             [x[1][rc[n]] for x in l], width, color=gc(n)))
+
+    #plt.xticks(ind + .5, )
+    pylab.gca().set_xticks(ind + .5)
+    pylab.gca().set_xticklabels([x[1][-1] for x in l], rotation=45)
+    pylab.legend([p[0] for p in pl], key)
+    pylab.show(block=is_called_as_standalone)
+
+src = None
+options = None
+is_called_as_standalone = True
+
+def main(parsedargs = None):
+    global src
+    global options
+    global is_called_as_standalone
+
+    if parsedargs:
+        is_called_as_standalone = False
+        options = parsedargs
+    else:
+        parser = optparse.OptionParser("%prog [options]")
+        parser.add_option("-H", "--no-header", action="store_true",
+                        help="disable header line")
+        parser.add_option("-c", "--columns", type="str",
+                        help="columns to show")
+        parser.add_option("-t", "--totals", action="store_true",
+                        help="show totals")
+        parser.add_option("-a", "--autosize", action="store_true",
+                        help="size columns to fit terminal size")
+
+        parser.add_option("-R", "--realmem", type="str",
+                        help="amount of physical RAM")
+        parser.add_option("-K", "--kernel", type="str",
+                        help="path to kernel image")
+
+        parser.add_option("-g", "--groupedmappings", action="store_true",
+                        help="show mappings grouped by its broad category (based on file name heuristics)")
+        parser.add_option("-m", "--mappings", action="store_true",
+                        help="show mappings")
+        parser.add_option("-u", "--users", action="store_true",
+                        help="show users")
+        parser.add_option("-w", "--system", action="store_true",
+                        help="show whole system")
+        parser.add_option("-f", "--free", action="store_true",
+                        help="show a simple free memory calculation")
+        parser.add_option("--usablepages", action="store_true",
+                        help="show usable_pages metric from LG kernel low memory notify patch")
+
+        parser.add_option("-I", "--pidfilter", type="str",
+                        help="process PID filter regex")
+        parser.add_option("-P", "--processfilter", type="str",
+                        help="process filter regex")
+        parser.add_option("-M", "--mapfilter", type="str",
+                        help="map filter regex")
+        parser.add_option("-U", "--userfilter", type="str",
+                        help="user filter regex")
+
+        parser.add_option("-n", "--numeric", action="store_true",
+                        help="numeric output")
+        parser.add_option("-s", "--sort", type="str",
+                        help="field to sort on")
+        parser.add_option("-r", "--reverse", action="store_true",
+                        help="reverse sort")
+
+        parser.add_option("-p", "--percent", action="store_true",
+                        help="show percentage")
+        parser.add_option("-k", "--abbreviate", action="store_true",
+                        help="show unit suffixes")
+
+        parser.add_option("", "--pie", type='str',
+                        help="show pie graph")
+        parser.add_option("", "--bar", type='str',
+                        help="show bar graph")
+
+        parser.add_option("-S", "--source", type="str",
+                        help="/proc data source")
+        parser.add_option("-D", "--diff", type="str"
+            , help="Compare two snapshots and highlight the main differences")
+        choices = ["excel", "aps"]
+        parser.add_option("--export", help = "Export memory snapshot into a supported external format %s" % choices, choices = choices)
+
+        defaults = {}
+        parser.set_defaults(**defaults)
+        (options, args) = parser.parse_args()
+
+    if not options.source:
+        print "A source must be specified with -S/--source parameter\n"
+        parser.print_help()
+        sys.exit(os.EX_USAGE)
+
+    try:
+        src = tardata(options.source)
+    except Exception, e:
+        src = procdata(options.source)
+
+    try:
+        if options.diff:
+            showdiff(options.diff)
+        elif options.export:
+            eval("export_" + options.export + "(%r)" % options.source)
+        elif options.mappings:
+            showmaps(group = False)
+        elif options.groupedmappings:
+            showmaps(group = True)
+        elif options.users:
+            showusers()
+        elif options.system:
+            showsystem()
+        elif options.free:
+            showfree()
+        elif options.usablepages:
+            showusablepages()
+        else:
+            showpids()
+    except IOError, e:
+        if e.errno == errno.EPIPE:
+            pass
+    except KeyboardInterrupt:
+        pass
+
+if __name__ == "__main__":
+    main()

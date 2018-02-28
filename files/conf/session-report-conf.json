@@ -1,0 +1,36 @@
+{
+    "catapultIgnoreEvents" : [
+        {
+            "provider": "ust_baddr_statedump"
+        },
+        {
+            "process" : "surface-manager",
+            "provider" : "pmtrace_qmlplugin"
+        },
+        {
+            "process" : "surface-manager",
+            "provider" : "qmlcompositor"
+        },
+        {
+            "process" : "surface-manager",
+            "provider" : "pmtrace_performancelog"
+        }
+    ],
+    "catapultUserView" : {
+        "enable" : true
+    },
+    "catapultGroupView" : {
+        "enable" : false,
+        "groups": [
+            {
+                "name" : "Custom",
+                "enable" : false,
+                "catapultEvents" : [
+                ]
+            }
+         ]
+    },
+    "catapultCPUView" : {
+        "enable" : false
+    }
+}

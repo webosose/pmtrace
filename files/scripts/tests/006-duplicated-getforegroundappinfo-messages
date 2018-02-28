@@ -1,0 +1,9 @@
+2016-08-23T02:24:38.810683Z [1712.716382106] user.info surface-manager-starfish [] IM IM_KEY_INPUT {"CLOCK":1712.716,"PerfType":"Event","PerfGroup":"Input","key_code":28,"key_value":0} 
+2016-08-23T02:24:38.826556Z [1712.732254398] user.info sam [] SAM APP_LAUNCH {"CLOCK":1712.732,"app_id":"com.webos.app.information","status":"start_prelaunching","PerfType":"AppLaunch","PerfGroup":"com.webos.app.information"} 
+2016-08-23T02:24:38.834747Z [1712.740446107] user.info sam [] SAM APP_LAUNCH {"CLOCK":1712.740,"app_id":"com.webos.app.information","status":"start_memory_checking","PerfType":"AppLaunch","PerfGroup":"com.webos.app.information"} 
+2016-08-23T02:24:38.836460Z [1712.742159065] user.info sam [] SAM APP_LAUNCH {"CLOCK":1712.741,"app_id":"com.webos.app.information","status":"start_launching","PerfType":"AppLaunch","PerfGroup":"com.webos.app.information"} 
+2016-08-23T02:24:38.837298Z [1712.743000190] user.info WebAppMgr [] WAM APPLAUNCH_START {"CLOCK":1712.742,"PerfType":"AppLaunch","PerfGroup":"com.webos.app.information","APP_ID":"com.webos.app.information"} 
+2016-08-23T02:24:38.838984Z [1712.744685273] user.info WebAppMgr [] WAM APP_ATTACHED_TO_CONTAINER {"CLOCK":1712.744,"PerfType":"AppLaunch","PerfGroup":"com.webos.app.information","APP_ID":"com.webos.app.information","PID":4878} 
+2016-08-23T02:24:39.296211Z [1713.201924898] user.info WebAppMgr [] WAM WINDOW_FOCUSIN {"CLOCK":1713.201,"PerfType":"AppLaunch","PerfGroup":"com.webos.app.information","APP_ID":"com.webos.app.information"} 
+2016-08-23T02:24:39.300727Z [1713.206426148] user.info sam [] SAM GET_FOREGROUND_APPINFO {"CLOCK":1713.204,"PerfType":"AppLaunch","PerfGroup":"com.webos.app.hdmi1"} 
+2016-08-23T02:24:39.300797Z [1713.206495523] user.info sam [] SAM GET_FOREGROUND_APPINFO {"CLOCK":1713.204,"PerfType":"AppLaunch","PerfGroup":"com.webos.app.information"}

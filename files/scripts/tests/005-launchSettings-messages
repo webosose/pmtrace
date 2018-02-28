@@ -1,0 +1,17 @@
+2016-05-10T08:06:59.056549Z [74.617050700] user.info surface-manager-starfish [] IM IM_KEY_INPUT {"CLOCK":74.616,"PerfType":"Event","PerfGroup":"Input","key_code":773,"key_value":1} 
+2016-05-10T08:06:59.248063Z [74.808565533] user.info surface-manager-starfish [] IM IM_KEY_INPUT {"CLOCK":74.808,"PerfType":"Event","PerfGroup":"Input","key_code":773,"key_value":0} 
+2016-05-10T08:06:59.269364Z [74.829868283] user.info surface-manager-starfish [] qmlPerformance HOME_LAUNCHER_SHOWN {     "PerfGroup": "HomeScreenShown",     "PerfType": "LSM",     "TIME": 20,     "UNIT": "ms" }  
+2016-05-10T08:06:59.498950Z [75.059454575] user.info surface-manager-starfish [] LSM HOME_WEDGE_SHOWN {     "CLOCK": 75.590000000000003,     "PerfGroup": "HomeScreenShown",     "PerfType": "LSM" }  
+2016-05-10T08:07:01.296925Z [76.857418618] user.info surface-manager-starfish [] IM IM_KEY_INPUT {"CLOCK":76.857,"PerfType":"Event","PerfGroup":"Input","key_code":272,"key_value":1} 
+2016-05-10T08:07:01.426776Z [76.987278701] user.info surface-manager-starfish [] IM IM_KEY_INPUT {"CLOCK":76.986,"PerfType":"Event","PerfGroup":"Input","key_code":272,"key_value":0} 
+2016-05-10T08:07:03.167504Z [78.728007827] user.info surface-manager-starfish [] qmlPerformance UI_READY {     "PerfGroup": "UIReady",     "PerfType": "QuickSettings",     "TIME": 1347,     "UNIT": "ms" }  
+2016-05-10T08:07:04.937101Z [80.497594078] user.info surface-manager-starfish [] IM IM_KEY_INPUT {"CLOCK":80.497,"PerfType":"Event","PerfGroup":"Input","key_code":272,"key_value":1} 
+2016-05-10T08:07:05.087102Z [80.647606203] user.info surface-manager-starfish [] IM IM_KEY_INPUT {"CLOCK":80.647,"PerfType":"Event","PerfGroup":"Input","key_code":272,"key_value":0} 
+2016-05-10T08:07:05.094596Z [80.655088911] user.info sam [] SAM APP_LAUNCH {"CLOCK":80.653,"app_id":"com.palm.app.settings","status":"start_prelaunching","PerfType":"AppLaunch","PerfGroup":"com.palm.app.settings"} 
+2016-05-10T08:07:05.094803Z [80.655295619] user.info sam [] SAM APP_LAUNCH {"CLOCK":80.654,"app_id":"com.palm.app.settings","status":"start_memory_checking","PerfType":"AppLaunch","PerfGroup":"com.palm.app.settings"} 
+2016-05-10T08:07:05.097114Z [80.657608536] user.info sam [] SAM APP_LAUNCH {"CLOCK":80.657,"app_id":"com.palm.app.settings","status":"start_launching","PerfType":"AppLaunch","PerfGroup":"com.palm.app.settings"} 
+2016-05-10T08:07:05.098272Z [80.658767453] user.info WebAppMgr [] WAM APPLAUNCH_START {"CLOCK":80.658,"PerfType":"AppLaunch","PerfGroup":"com.palm.app.settings","APP_ID":"com.palm.app.settings"} 
+2016-05-10T08:07:05.101609Z [80.662101869] user.info WebAppMgr [] WAM APP_ATTACHED_TO_CONTAINER {"CLOCK":80.660,"PerfType":"AppLaunch","PerfGroup":"com.palm.app.settings","APP_ID":"com.palm.app.settings","PID":3354} 
+2016-05-10T08:07:06.624150Z [82.184644953] user.info sam [] SAM GET_FOREGROUND_APPINFO {"CLOCK":82.182,"PerfType":"AppLaunch","PerfGroup":"com.webos.app.livetv"} 
+2016-05-10T08:07:06.624232Z [82.184725787] user.info sam [] SAM GET_FOREGROUND_APPINFO {"CLOCK":82.182,"PerfType":"AppLaunch","PerfGroup":"com.palm.app.settings"} 
+2016-05-10T08:07:06.647626Z [82.208128037] user.info WebAppMgr [] WAM WINDOW_FOCUSIN {"CLOCK":82.207,"PerfType":"AppLaunch","PerfGroup":"com.palm.app.settings","APP_ID":"com.palm.app.settings"}

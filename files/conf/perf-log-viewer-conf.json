@@ -1,0 +1,106 @@
+{
+  "contexts":[
+    {
+      "description":"App launch time",
+      "PerfType":null,
+      "PerfGroup":null,
+      "allowedResponseMS":10000,
+      "startConditions":[
+        {
+          "PerfType":"Event",
+          "PerfGroup":"Input",
+          "msgid":"IM_KEY_INPUT",
+          "requiredStrings":[
+
+          ]
+        },
+        {
+          "PerfType":"AppLaunch",
+          "PerfGroup":"*",
+          "msgid":"APP_LAUNCH",
+          "requiredStrings":[
+            "start_prelaunching"
+          ]
+        }
+      ],
+      "endConditions":[
+        {
+          "PerfType":"AppLaunch",
+          "PerfGroup":"*",
+          "msgid":"WINDOW_FOCUSIN",
+          "requiredStrings":[
+
+          ]
+        },
+        {
+          "PerfType":"AppLaunch",
+          "PerfGroup":"*",
+          "msgid":"APP_INTERACTIVE",
+          "requiredStrings":[
+
+          ]
+        },
+        {
+          "PerfType":"AppLaunch",
+          "PerfGroup":"*",
+          "msgid":"GET_FOREGROUND_APPINFO",
+          "requiredStrings":[
+
+          ]
+        }
+      ]
+    },
+    {
+      "description":"Home launcher",
+      "PerfType":"LSM",
+      "PerfGroup":"HomeScreenShown",
+      "allowedResponseMS":2000,
+      "startConditions":[
+        {
+          "PerfType":"Event",
+          "PerfGroup":"Input",
+          "msgid":"IM_KEY_INPUT",
+          "requiredStrings":[
+
+          ]
+        }
+      ],
+      "endConditions":[
+        {
+          "PerfType":"LSM",
+          "PerfGroup":"*",
+          "msgid":"HOME_WEDGE_SHOWN",
+          "requiredStrings":[
+
+          ]
+        }
+      ]
+    },
+    {
+      "description":"Home launcher shown at booting time",
+      "PerfType":"BootTime",
+      "PerfGroup":"TimeToLauncher",
+      "allowedResponseMS":60000,
+      "startConditions":[
+        {
+          "PerfType":"Boot",
+          "PerfGroup":"Platform",
+          "msgid":"Boot",
+          "requiredStrings":[
+            "BOOTD_START"
+          ]
+        }
+      ],
+      "endConditions":[
+        {
+          "PerfType":"LSM",
+          "PerfGroup":"HomeScreenShown",
+          "msgid":"HOME_LAUNCHER_SHOWN",
+          "requiredStrings":[
+
+          ]
+        }
+      ]
+    }
+  ]
+}
