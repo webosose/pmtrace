@@ -33,8 +33,6 @@ logger = logging.getLogger('PerfLogViewer')
 log_entry_logger = logging.getLogger('LogEntry')
 
 DEFAULT_PMLOG_FILE = '/var/log/messages'
-DEFAULT_LEGACYLOG_FILE = '/var/log/legacy-log'
-
 
 class LogEntryBase(object):
     """Base class for a line of logs"""
@@ -90,7 +88,7 @@ class PmlogEntry(LogEntryBase):
     UTC MONOTONICTIME LOGLEVEL PROCESS [PID] CONTEXT MSGID {...} FREETEXT
     """
 
-    PMLOGRE = '^(?P<utc>.+) \[(?P<monotonicSec>[0-9\.]+)\] (?P<loglevel>[\w.]+) (?P<proc>.+?) \[(?P<pid>\d*?)\] (?P<ctx>.+?) (?P<msgid>.+?) (?P<rest>.*)$'
+    PMLOGRE = '^(?P<utc>.+) \[(?P<monotonicSec>[0-9\.]+)\] (?P<loglevel>[\w.]+) (?P<proc>.+?) \[(?P<pid>\d*?)\] (?P<ctx>.+?) (?P<msgid>.+?) (?P<rest>.*)$|^(?P<utc1>[A-z]+ [0-9]+ [0-9]+:[0-9]+:[0-9]+) (?P<host1>[A-z0-9]+) (?P<level>[A-z.]+) (?P<proc1>[A-z]+): \[.*\] \[(?P<logger1>.*)\] (?P<ctx1>.+?) (?P<msgid1>.+?) (?P<rest1>.*)$'
 
     def __init__(self, s):
         self.freeText = None
@@ -107,6 +105,30 @@ class PmlogEntry(LogEntryBase):
         return s.strip()
 
     def parse(self, s):
+        def decode_fields(mdict):
+            try:
+                tmp = {}
+                tmp.update({k: v for k, v in mdict.items() if k in (
+                    'utc', 'loglevel', 'proc', 'ctx', 'msgid')})
+                tmp['monotonicSec'] = float(mdict['monotonicSec'])
+                tmp['pid'] = int(mdict['pid']) if mdict['pid'] != '' else 0
+                # 'rest' consists of kvs and freeText
+                rest = mdict['rest']
+                return (tmp, rest)
+            except:
+                pass
+            try:
+                tmp = {}
+                tmp.update({k: v for k, v in mdict.items() if k in (
+                    'utc1', 'loglevel1', 'proc1', 'ctx1', 'msgid1')})
+                tmp['monotonicSec'] = float(0.0)
+                tmp['pid'] = int(mdict.get('pid1')) if mdict.get('pid1') else 0
+                # 'rest' consists of kvs and freeText
+                rest = mdict['rest1']
+                return (tmp, rest)
+            except:
+                pass
+
         match = re.search(self.PMLOGRE, s)
 
         if not match:
@@ -117,13 +139,7 @@ class PmlogEntry(LogEntryBase):
 
         tmp = {}
         try:
-            tmp.update({k: v for k, v in mdict.items() if k in (
-                'utc', 'loglevel', 'proc', 'ctx', 'msgid')})
-            tmp['monotonicSec'] = float(mdict['monotonicSec'])
-            tmp['pid'] = int(mdict['pid']) if mdict['pid'] != '' else 0
-
-            # 'rest' consists of kvs and freeText
-            rest = mdict['rest']
+            tmp, rest = decode_fields(mdict)
 
             stk = []
             idxEndKvs = 0
@@ -143,16 +159,18 @@ class PmlogEntry(LogEntryBase):
             kvs = rest[0:idxEndKvs + 1]
             tmp.update(json.loads(kvs))
 
-            self.proc = tmp.get('proc')
+            self.proc = tmp.get('proc') or tmp.get('proc1')
+
             self.type = tmp.get('PerfType')
             self.grp = tmp.get('PerfGroup')
-            self.msgid = tmp.get('msgid')
-            self.clock = tmp.get('CLOCK', tmp['monotonicSec'])
+            self.msgid = tmp.get('msgid') or tmp.get('msgid1')
+            self.clock = tmp.get('CLOCK', tmp.get('monotonicSec') or 0.0)
             self.freeText = rest[idxEndKvs + 1:].strip()
 
-            excludeKeys = ('utc', 'monotonicSec', 'loglevel', 'proc', 'pid', 'ctx',
-                           'msgid', 'freeText', 'PerfType', 'PerfGroup', 'CLOCK',
-                           'app_id')
+            excludeKeys = ('utc', 'utc1', 'monotonicSec', 'loglevel',
+                           'loglevel1', 'proc', 'proc1', 'pid', 'pid1', 'ctx',
+                           'ctx1', 'msgid', 'msgid1', 'freeText', 'PerfType',
+                           'PerfGroup', 'CLOCK', 'app_id')
             self.rest = ''
 
             pvs = [(k, str(tmp[k]))
@@ -168,74 +186,6 @@ class PmlogEntry(LogEntryBase):
         return True
 
 
-class LegacylogEntry(LogEntryBase):
-
-    """Describe each of a line
-
-     - Format of legacy log
-    UTC [MONOTONICTIME] LOGLEVEL PROCESS FREETEXT
-    """
-
-    LEGACYLOGRE = '^(?P<utc>.+) \[(?P<monotonicSec>[0-9\.]+)\] (?P<loglevel>[\w.]+) (?P<proc>.+?) (?P<rest>.*)$'
-    RESTRE = '.*CLOCK:(?P<CLOCK>[0-9\.]*) PerfType:(?P<PerfType>[\w\.]*) PerfGroup:(?P<PerfGroup>[\w\.]*)$'
-
-    def __init__(self, s):
-        self.freeText = None
-        super(LegacylogEntry, self).__init__(s)
-
-    def __str__(self):
-        return 'Legacylog clk(%6.2f) proc(%s) type(%s) grp(%s) msgid(%s): raw(%s)' % \
-            (self.clock, self.proc, self.type, self.grp, self.msgid, self.raw)
-
-    def get_free_text(self):
-        return self.freeText
-
-    def parse(self, s):
-        match = re.search(self.LEGACYLOGRE, s)
-
-        if not match:
-            log_entry_logger.warning('Wrong log format: %s', s)
-            return False
-
-        mdict = match.groupdict()
-
-        tmp = {}
-        try:
-            tmp.update(
-                {k: v for k, v in mdict.items() if k in ('utc', 'loglevel', 'proc')})
-            tmp['monotonicSec'] = float(mdict['monotonicSec'])
-
-            # Extract essential items on freeText
-            rest = mdict['rest']
-
-            restMatch = re.search(self.RESTRE, rest)
-
-            if restMatch:
-                rdict = restMatch.groupdict()
-                if 'CLOCK' in rdict.keys():
-                    rdict['CLOCK'] = float(rdict['CLOCK'])
-
-                tmp.update(rdict)
-
-            # TODO: Can be cut wrong strings
-            rest = rest[:rest.find('CLOCK:')]
-            if len(rest):
-                tmp['freeText'] = rest
-
-            self.proc = tmp.get('proc')
-            self.type = tmp.get('PerfType')
-            self.grp = tmp.get('PerfGroup')
-            self.msgid = tmp.get('msgid')
-            self.clock = tmp.get('CLOCK', tmp['monotonicSec'])
-            self.freeText = tmp.get('freeText')
-
-        except:
-            log_entry_logger.warning('Wrong log contents: %s', s)
-            return False
-
-        return True
-
-
 class JournallogEntry(LogEntryBase):
 
     """
@@ -243,7 +193,6 @@ class JournallogEntry(LogEntryBase):
     Extracted by a command below:
 
     $ journalctl -o json
-
 
     Output example:
     {
@@ -375,31 +324,6 @@ def load_pmlog(comm, config, pmlogs):
     return log_entries
 
 
-def load_legacylog(comm, config, legacylogs):
-    log_entries = LogList()
-
-    if not legacylogs:
-        return log_entries
-    try:
-        for i in legacylogs:
-            with comm.read_file(i) as f:
-                for raw_line in f.readlines():
-                    ent = LegacylogEntry(raw_line.strip())
-
-                    if ent.is_perf_log() or config.is_in_conditions(ent):
-                        log_entries.append(ent)
-                    else:
-                        log_entry_logger.debug('Ignore: %s' % ent)
-    except IOError as e:
-        print('Error while loading legacylog', e)
-        raise e
-
-    log_entry_logger.info('Load legacylog: cnt(%d) from (%s)' %
-                          (len(log_entries), ' ,'.join(legacylogs)))
-
-    return log_entries
-
-
 def load_journallog(comm, config, journallogs):
     log_entries = LogList()
     cmd = ['journalctl', '-o', 'json']
@@ -432,20 +356,13 @@ def load_logs(comm, plat, config, **kargs):
         log_entry_logger.info('Running platform: %s' % plat.get_os_name())
 
         # Lookup log files if a user doesn't input specific log files
-        if not kargs.get('pmlogs') and not kargs.get('legacylogs'):
+        if not kargs.get('pmlogs') :
             pmlog_files = comm.exec_command(
                 ['ls', DEFAULT_PMLOG_FILE + '*'], True).split()
             logger.info('Pmlog files: %s' % pmlog_files)
             kargs['pmlogs'] = pmlog_files
 
-            legacylog_files = comm.exec_command(
-                ['ls', DEFAULT_LEGACYLOG_FILE + '*'], True).split()
-            logger.info('Legacylog files: %s' % legacylog_files)
-            kargs['legacylogs'] = legacylog_files
-
         log_entries.extend(load_pmlog(comm, config, kargs.get('pmlogs', [])))
-        log_entries.extend(
-            load_legacylog(comm, config, kargs.get('legacylogs', [])))
 
     log_entry_logger.info('Nr of entries: (%d)' % len(log_entries))
 
@@ -757,9 +674,9 @@ if __name__ == "__main__":
 
     Simple usages:
     ./perf_log_viewer.py
-    > Read '/var/log/messages' and '/var/log/legacy-log' and show a result
+    > Read '/var/log/messages' and show a result
 
-    ./perf_log_viewer.py -p <PmLog file> -l <Legacy log file>
+    ./perf_log_viewer.py -p <PmLog file>
     > Read logs from manually specified options
 
     ./perf_log_viewer.py --ip <IP Address>
@@ -799,10 +716,8 @@ if __name__ == "__main__":
     file_grp = arg_parser.add_argument_group()
     file_grp.add_argument(
         '-p', '--PmlogFile', action='append', help='PmLog file')
-    file_grp.add_argument('-l', '--LegacylogFile', action='append',
-                          help='Legacy log file')
     file_grp.add_argument('--logpath', action='store',
-                          help='Set a log path. Load whole messages and legacylog')
+                          help='Set a log path. Load whole messages')
 
     args = vars(arg_parser.parse_args())
     logger.info('Argparse conf: %s' % str(args))
@@ -835,8 +750,7 @@ if __name__ == "__main__":
     ent_grp = load_logs(comm,
                         plat_info,
                         viewer_conf,
-                        pmlogs=args.get('PmlogFile'),
-                        legacylogs=args.get('LegacylogFile'))
+                        pmlogs=args.get('PmlogFile'))
     ent_grp.sort_by_time()
 
     analyzed_ent_grps = analyze(viewer_conf, ent_grp)

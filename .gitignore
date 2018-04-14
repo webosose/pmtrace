@@ -27,3 +27,5 @@ src/pmctl/performance-control/pmctl
 pmsession
 pmsession-report
 *.swp
+build/
+oe-*
