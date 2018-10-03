@@ -13,13 +13,6 @@
             "lttngEvents": [
                 "sched_switch"
             ]
-        },
-        {
-            "name" : "fps",
-            "enable" : true,
-            "lttngEvents": [
-                "starfish_qt5qpa*"
-            ]
         }
     ]
 }

@@ -768,21 +768,6 @@ if __name__ == "__main__":
     ./perf_log_viewer.py -c <Config file>
     > Use another configuration file
 
-    ./perf_log_viewer.py
-
-
-    Output example:
-
-    Type: AppLaunch
-    Group: com.lge.app.settings
-    Start time: 42.01
-    Process                        MsgID                     Time(s)  +Diff(s)  Extra
-    surface-manager-starfish       IM_KEY_INPUT              0.0      +0.0      key_value:0 key_code:28
-    sam                            APP_LAUNCH                0.015    +0.015    status:start_prelaunching
-    sam                            APP_LAUNCH                0.024    +0.009    status:start_memory_checking
-    Elapsed time (s) : 1.750
-
-
     For more information, please see below links
     https://wiki.lgsvl.com/display/webOSDocs/Performance+Log+Viewer
     https://wiki.lgsvl.com/pages/viewpage.action?pageId=115933443
