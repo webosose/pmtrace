@@ -21,31 +21,25 @@ class PlatInfo(object):
     __metaclass__ = abc.ABCMeta
     @abc.abstractmethod
     def get_hw_name(self):
-        ''' Get hardware name; e.g.: 'm16' '''
         return
 
     @abc.abstractmethod
     def get_os_name(self):
-        ''' Get operating system name; e.g.: 'webOS TV Reference' '''
         return
 
     @abc.abstractmethod
     def get_build_info(self):
-        ''' Get build information; e.g.: '100' '''
         return
 
     @abc.abstractmethod
     def get_code_name(self):
-        ''' Get platform code name; e.g.: 'flattop-master' '''
         return
 
     @abc.abstractmethod
     def get_model_name(self):
-        ''' Get platform model name; e.g.: 'starfish-atsc-flash' '''
         return
 
 class PlatInfoFactory(object):
-    ''' Get platform information instance via factory method pattern '''
     @staticmethod
     def makePlatInfo(comm):
         try:
