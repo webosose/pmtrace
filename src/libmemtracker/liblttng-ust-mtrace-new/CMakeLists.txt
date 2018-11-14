@@ -14,10 +14,6 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-#
-# src/libmemtracker/CMakeLists.txt
-#
-
 include(FindPkgConfig)
 
 pkg_check_modules(LTTNG_UST lttng-ust>=2.7.0)
@@ -31,13 +27,6 @@ endif()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
-set(MT_MALLOC_SRC_FILES lttng-ust-mtrace-malloc.c)
-add_library(lttng-ust-mtrace-malloc SHARED ${MT_MALLOC_SRC_FILES})
-target_link_libraries(lttng-ust-mtrace-malloc ${LTTNG_UST_LDFLAGS} dl)
-set_target_properties(lttng-ust-mtrace-malloc PROPERTIES
-    VERSION ${PMTRACE_VER_STRING}
-    SOVERSION ${PMTRACE_VER_MAJOR})
-
 set(MT_NEW_SRC_FILES lttng-ust-mtrace-new.cpp)
 add_library(lttng-ust-mtrace-new SHARED ${MT_NEW_SRC_FILES})
 target_link_libraries(lttng-ust-mtrace-new ${LTTNG_UST_LDFLAGS} dl)
@@ -45,4 +34,4 @@ set_target_properties(lttng-ust-mtrace-new PROPERTIES
     VERSION ${PMTRACE_VER_STRING}
     SOVERSION ${PMTRACE_VER_MAJOR})
 
-install(TARGETS lttng-ust-mtrace-malloc lttng-ust-mtrace-new LIBRARY DESTINATION lib)
+install(TARGETS lttng-ust-mtrace-new LIBRARY DESTINATION lib)
