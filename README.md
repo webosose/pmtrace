@@ -51,7 +51,27 @@ From the directory where you originally ran `make install`, enter:
 
 # Copyright and License Information
 
-Unless otherwise specified, all content, including all source code files and
+1) The files under src/libmemtracker/liblttng-ust-mtrace-malloc directory are :
+
+Copyright (C) 2009  Pierre-Marc Fournier
+Copyright (C) 2011  Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+
+This library is free software; you can redistribute it and/or
+modify it under the terms of the GNU Lesser General Public
+License as published by the Free Software Foundation; either
+version 2.1 of the License, or (at your option) any later version.
+
+This library is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+Lesser General Public License for more details.
+
+You should have received a copy of the GNU Lesser General Public
+License along with this library; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA
+
+
+2) Unless otherwise specified, all content, including all source code files and
 documentation files in this repository are:
 
 Copyright (c) 2016-2018 LG Electronics, Inc.
@@ -69,3 +89,4 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 SPDX-License-Identifier: Apache-2.0
+
