@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 # Copyright (c) 2018 LG Electronics, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -129,7 +129,7 @@ class MemoryProfiler(object):
     def _run_smem(self, fpath, unit):
         # Expects smem.arm to be in same folder as mem_profile.py
         smem_path = os.path.join(os.path.dirname(__file__), './smem.arm')
-        cmd = 'python2 %s -S %s -t %s --export aps >/dev/null 2>&1' \
+        cmd = 'python3 %s -S %s -t %s --export aps >/dev/null 2>&1' \
               % (smem_path, fpath, unit)
         try:
             # Try processing memory snapshot asynchronously
