@@ -1,4 +1,4 @@
-// Copyright (c) 2016-2018 LG Electronics, Inc.
+// Copyright (c) 2016-2021 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -28,7 +28,10 @@ LttngParser::LttngParser(OptionHandler& opt)
   m_cpuUsageTargetTs(0),
   m_cpuUsagePeriod(Definition::DEFAULT_CPU_USAGE_PERIOD),
   m_groupViewId(Definition::GROUP_VIEW_ID_BASE),
-  m_outCount(0)
+  m_outCount(0),
+  m_userView(false),
+  m_groupView(false),
+  m_cpuView(false)
 {
     m_isDebug = opt.hasDebug();
     m_validBoottime = !opt.hasInput();
