@@ -1,4 +1,4 @@
-// Copyright (c) 2016-2021 LG Electronics, Inc.
+// Copyright (c) 2016-2022 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -100,10 +100,16 @@ bool LttngParser::initialize(OptionHandler& opt)
 
     if(m_cpuView)
     {
-        m_coreNum = getCoreNum();
+        int coreNum = getCoreNum();
+        if(coreNum < 1) {
+            Definition::LOG->LogError("(LttngParser) invalid core num: %d from getCoreNum()\n", coreNum);
+            return false;
+        } else {
+            m_coreNum = coreNum;
+        }
         Definition::LOG->LogDebug("(LttngParser) core num : %d\n", m_coreNum);
-        m_cpuUsageCount = new unsigned long long[m_coreNum];
-        memset(m_cpuUsageCount, 0, sizeof(unsigned long long)*(m_coreNum));
+        m_cpuUsageCount = new unsigned long long[(unsigned long long)m_coreNum];
+        memset(m_cpuUsageCount, 0, sizeof(unsigned long long)*((unsigned long long)m_coreNum));
     }
 
     if(opt.hasProcess()) // process selection
