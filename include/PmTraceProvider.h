@@ -1,4 +1,4 @@
-// Copyright (c) 2013-2018 LG Electronics, Inc.
+// Copyright (c) 2013-2022 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,14 +20,14 @@
 #undef TRACEPOINT_INCLUDE
 #define TRACEPOINT_INCLUDE "./PmTraceProvider.h"
 
+#include <lttng/tracepoint.h>
+
 #ifdef __cplusplus
 extern "C"{
 #endif /*__cplusplus */
 
 #if !defined(__PMTRACE_PROVIDER_H) || defined(TRACEPOINT_HEADER_MULTI_READ)
 #define __PMTRACE_PROVIDER_H
-
-#include <lttng/tracepoint.h>
 
 /*
     Tracepoint classes
