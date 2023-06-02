@@ -99,11 +99,14 @@ void Logger::StopWatch(bool onOff, const char * msg)
         m_onStopWatch = false;
 
         time_t secs = time(NULL) - timeStamp;
-        time_t hour, min, sec;
-        sec = secs % 60;
-        min = secs /60 % 60;
-        hour = secs / 3600;
-        LogInfo("%s : %02d:%02d:%02d\n", msg, (int)hour, (int)min, (int)sec);
+        struct tm timeinfo;
+        timeinfo.tm_sec = secs % 60;
+        timeinfo.tm_min = secs /60 % 60;
+        timeinfo.tm_hour = secs / 3600;
+
+        char buffer[9]; // HH:MM:SS + null
+        strftime(buffer, sizeof(buffer), "%H:%M:%S", &timeinfo);
+        LogInfo("%s : %s\n", msg, buffer);
     }
 }
 
