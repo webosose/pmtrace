@@ -87,23 +87,23 @@ void Logger::printLogLevel()
 
 void Logger::StopWatch(bool onOff, const char * msg)
 {
-    static int timeStamp;
+    static time_t timeStamp;
 
     if(onOff)
     {
-        timeStamp = (int)time(NULL);
+        timeStamp = time(NULL);
         m_onStopWatch = true;
     }
     else if(!onOff && m_onStopWatch)
     {
         m_onStopWatch = false;
 
-        int secs = (int)time(NULL) - timeStamp;
-        int hour, min, sec;
+        time_t secs = time(NULL) - timeStamp;
+        time_t hour, min, sec;
         sec = secs % 60;
         min = secs /60 % 60;
         hour = secs / 3600;
-        LogInfo("%s : %02d:%02d:%02d\n", msg, hour, min, sec);
+        LogInfo("%s : %02d:%02d:%02d\n", msg, (int)hour, (int)min, (int)sec);
     }
 }
 
