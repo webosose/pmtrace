@@ -88,6 +88,7 @@ void Logger::printLogLevel()
 void Logger::StopWatch(bool onOff, const char * msg)
 {
     static time_t timeStamp;
+    struct tm timeinfo = {0};
 
     if(onOff)
     {
@@ -99,7 +100,6 @@ void Logger::StopWatch(bool onOff, const char * msg)
         m_onStopWatch = false;
 
         time_t secs = time(NULL) - timeStamp;
-        struct tm timeinfo;
         timeinfo.tm_sec = secs % 60;
         timeinfo.tm_min = secs /60 % 60;
         timeinfo.tm_hour = secs / 3600;
