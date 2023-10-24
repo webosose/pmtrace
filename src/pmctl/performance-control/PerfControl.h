@@ -1,4 +1,4 @@
-// Copyright (c) 2016-2018 LG Electronics, Inc.
+// Copyright (c) 2016-2023 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -33,13 +33,9 @@ private:
     bool runModule(string);
 
 public:
-    static const string MODULE_SESSION;
-    static const string MODULE_SESSION_REPORT;
     static const string MODULE_PERFLOG_REPORT;
     static const string MODULE_MEMORY_PROFILE;
 
-    static const string COMMAND_SESSION;
-    static const string COMMAND_SESSION_REPORT;
     static const string COMMAND_PERFLOG_REPORT;
     static const string COMMAND_MEMORY_PROFILE;
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2016-2018 LG Electronics, Inc.
+// Copyright (c) 2016-2023 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -42,13 +42,9 @@ void printHelp()
 {
     cout << "Usage: pmctl <module> [option]\n\n";
     cout << "modules:\n \
-        session\t\tControl a performance-session\n \
-        session-report\t\tControl a performance-session-report\n \
         perflog-report\t\tControl a performance-log-viewer\n \
         memory-profile\t\tControl a memory-profile\n\n";
     cout << "\nExamples:\n \
-        pmctl session -h\n \
-        pmctl session-report -h\n \
         pmctl perflog-report -h\n \
         pmctl memory-profile -h\n\n";
 }

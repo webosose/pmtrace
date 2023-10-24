@@ -1,4 +1,4 @@
-// Copyright (c) 2016-2018 LG Electronics, Inc.
+// Copyright (c) 2016-2023 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,13 +16,9 @@
 
 #include "PerfControl.h"
 
-const string PerfControl::MODULE_SESSION            = "session";
-const string PerfControl::MODULE_SESSION_REPORT     = "session-report";
 const string PerfControl::MODULE_PERFLOG_REPORT     = "perflog-report";
 const string PerfControl::MODULE_MEMORY_PROFILE     = "memory-profile";
 
-const string PerfControl::COMMAND_SESSION           = "pmsession";
-const string PerfControl::COMMAND_SESSION_REPORT    = "pmsession-report";
 const string PerfControl::COMMAND_PERFLOG_REPORT    = "perf_log_viewer.py";
 const string PerfControl::COMMAND_MEMORY_PROFILE    = "mem_profile.py";
 
@@ -60,23 +56,7 @@ PerfControl::~PerfControl()
 
 bool PerfControl::execModule()
 {
-    if(m_module == PerfControl::MODULE_SESSION)
-    {
-        if(!runModule(PerfControl::COMMAND_SESSION))
-        {
-            cerr << "[ERROR] fail to run session\n";
-            return false;
-        }
-    }
-    else if(m_module == PerfControl::MODULE_SESSION_REPORT)
-    {
-        if(!runModule(PerfControl::COMMAND_SESSION_REPORT))
-        {
-            cerr << "[ERROR] fail to run session-report\n";
-            return false;
-        }
-    }
-    else if(m_module == PerfControl::MODULE_PERFLOG_REPORT)
+    if(m_module == PerfControl::MODULE_PERFLOG_REPORT)
     {
         if(!runModule(PerfControl::COMMAND_PERFLOG_REPORT))
         {

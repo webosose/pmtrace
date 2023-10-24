@@ -52,11 +52,7 @@ if(ENABLE_LIBPMTRACE)
         files/scripts/smem.arm
         DESTINATION ${CMAKE_INSTALL_BINDIR})
 
-#add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/src/libmemtracker/liblttng-ust-mtrace-malloc)
-#add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/src/libmemtracker/liblttng-ust-mtrace-new)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/src/pmctl/performance-control)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/src/pmctl/performance-session)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/src/pmctl/performance-session-report)
 endif()
 
 # The libpmtrace header files are needed by other components for building with pmtrace.
