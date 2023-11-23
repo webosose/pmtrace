@@ -83,7 +83,7 @@ bool PerfControl::execModule()
 
 bool PerfControl::runModule(string cmd)
 {
-    string command = cmd;
+    string command = std::move(cmd);
 
     for(int i=2; i < m_argc; i++)
     {
