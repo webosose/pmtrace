@@ -167,13 +167,13 @@ private:
         struct timespec ts; \
         clock_gettime(CLOCK_MONOTONIC, &ts); \
         _PmLogMsgPerfLog(kv_count)(ctx, Info, msgid, \
-            "CLOCK", "%ld.%03d", ts.tv_sec, ts.tv_nsec / 1000000, \
+            "CLOCK", "%jd.%03d", (intmax_t) ts.tv_sec, ts.tv_nsec / 1000000, \
             "PerfType", "\"%s\"", type, \
             "PerfGroup", "\"%s\"", group, \
             __VA_ARGS__); \
         if (tracepoint_enabled(pmtrace, perflog)) { \
             char payload[128]; \
-            snprintf(payload, 128, "{\"CLOCK\":%ld.%03d, \"PerfType\":\"%s\", \"PerfGroup\":\"%s\"}", ts.tv_sec, ts.tv_nsec / 1000000, type, group); \
+            snprintf(payload, 128, "{\"CLOCK\":%jd.%03d, \"PerfType\":\"%s\", \"PerfGroup\":\"%s\"}", (intmax_t) ts.tv_sec, ts.tv_nsec / 1000000, type, group); \
             do_tracepoint(pmtrace, perflog, "perflog", msgid, payload); \
         } \
     } while(0)
@@ -194,7 +194,7 @@ private:
         struct timespec ts; \
         char clk[CLOCK_STR_LEN]; \
         clock_gettime(CLOCK_MONOTONIC, &ts); \
-        snprintf(clk, CLOCK_STR_LEN, "%ld.%3d", ts.tv_sec, ts.tv_nsec / 1000000); \
+        snprintf(clk, CLOCK_STR_LEN, "%jd.%3d", (intmax_t) ts.tv_sec, ts.tv_nsec / 1000000); \
         _PmtPerfLogSyslog(PMTKVS("ctx", ctx), PMTKVS("CLOCK", clk), PMTKVS("msgid", msgid), PMTKVS("PerfType", type), PMTKVS("PerfGroup", group), __VA_ARGS__); \
         _PmtPerfLogLttng(ctx, msgid, PMTKVS("CLOCK", clk), PMTKVS("PerfType", type), PMTKVS("PerfGroup", group), __VA_ARGS__); \
     } while(0)
